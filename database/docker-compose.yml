@@ -1,0 +1,54 @@
+name: shlabs-db
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: shlabs-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: shlabs_root_pass
+      MYSQL_DATABASE: shlabs_ecom
+      MYSQL_USER: shlabs
+      MYSQL_PASSWORD: shlabs_pass
+      TZ: Asia/Shanghai
+    volumes:
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+      - shlabs_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-ushlabs", "-pshlabs_pass"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - shlabs-net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: shlabs-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: shlabs
+      POSTGRES_PASSWORD: shlabs_pass
+      POSTGRES_DB: shlabs_hr
+      TZ: Asia/Shanghai
+    volumes:
+      - ./postgresql/init:/docker-entrypoint-initdb.d:ro
+      - shlabs_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shlabs -d shlabs_hr"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - shlabs-net
+
+# 不发布任何宿主机端口：数据库只在 shlabs-net 内部可达（容器名直连）。
+# 靶场接入：base/*/docker-compose.yml 声明外部网络 shlabs-net，或运行时
+#   docker network connect shlabs-net <靶场容器名>
+networks:
+  shlabs-net:
+    name: shlabs-net
+
+volumes:
+  shlabs_mysql_data:
+  shlabs_pg_data:

@@ -1,0 +1,5 @@
+.env
+.mimosa/
+
+# Python
+__pycache__/
