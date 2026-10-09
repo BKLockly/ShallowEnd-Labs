@@ -163,6 +163,23 @@ curl -o /dev/null -w '%{http_code}' http://127.0.0.1:21504/   # 200 即就绪
 | dungeon-revealer 构建期 apt 404 | node:16 基于 bullseye（2026-08 已归档），Dockerfile 已固定切 archive.debian.org 且删除 bullseye-security 源 |
 | 注入成功但 `--verify` 失败 | 内存马驻留在**进程**里；容器重启/`down` 后需重新注入。多进程容器（cluster 模式）注意注入的 PID 是否对外服务进程 |
 
+## 4.1 Mem Pipe 交互终端 e2e（主仓）
+
+ShallowEnd 主仓有两个 pipe e2e 用例（`PIPE_E2E=1 go test -tags e2e ./internal/app/ -run <name>`），
+按目标侧 profile 自适应，互斥跳过：
+
+| 用例 | 需要 | 跳过条件 |
+|------|------|----------|
+| `TestMemPipeE2E`（PTY 全链路） | 目标装有 util-linux(script) + bash | 目标降级 pipe profile 时 skip |
+| `TestMemPipeFallbackProbe`（pipe fallback 可用性） | 纯净 alpine（无 util-linux） | 目标为 PTY profile 时 skip |
+
+55182/73649 的 runtime 镜像已固化 `apk add util-linux bash`（PTY 主路径），默认跑前者；
+要测 fallback 需临时去掉 Dockerfile 里的 apk add 行并 `clean && up` 重建。
+
+注意：payload 安装是**一次性**的（emit 壳仅在 `_cacheHandler === undefined` 时安装），
+主仓 payload 模板改动生效必须重新 `inject`（容器重启或 `clean && up` 后再注入）；
+同一存活 payload 上重复跑 e2e 需主仓侧 seq 分配器播种晚于上次运行（2026-10-10 起已墙时钟播种）。
+
 ## 5. 验收口径
 
 每个环境的最小验收 = `./shlabs.sh up <env>` 服务健康 + `./shlabs.sh inject <env>`
