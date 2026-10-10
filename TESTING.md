@@ -174,7 +174,8 @@ ShallowEnd 主仓有两个 pipe e2e 用例（`PIPE_E2E=1 go test -tags e2e ./int
 | `TestMemPipeFallbackProbe`（pipe fallback 可用性） | 纯净 alpine（无 util-linux） | 目标为 PTY profile 时 skip |
 
 55182/73649 的 runtime 镜像已固化 `apk add util-linux bash`（PTY 主路径），默认跑前者；
-要测 fallback 需临时去掉 Dockerfile 里的 apk add 行并 `clean && up` 重建。
+要测 fallback 需临时去掉 Dockerfile 里的 apk add 行再 `up`（up 会自动重建检测到
+Dockerfile 变化的镜像）。
 
 注意：payload 安装是**一次性**的（emit 壳仅在 `_cacheHandler === undefined` 时安装），
 主仓 payload 模板改动生效必须重新 `inject`（容器重启或 `clean && up` 后再注入）；
