@@ -69,29 +69,6 @@ services:
     networks:
       - shlabs-net
 
-  redis:
-    image: redis:8-alpine
-    container_name: shlabs-redis
-    restart: unless-stopped
-    # 后台启动 → 灌种子（SET 幂等，每次启动重灌无害）→ wait 常驻
-    entrypoint: ["/bin/sh", "-c"]
-    command: >
-      "redis-server --requirepass shlabs_pass --save 60 1 &
-       sleep 1 &&
-       redis-cli -a shlabs_pass < /init/seed.redis >/dev/null &&
-       echo 'shlabs: redis seeded' &&
-       wait"
-    volumes:
-      - ./redis/init:/init:ro
-      - shlabs_redis_data:/data
-    healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a shlabs_pass ping | grep -q PONG"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    networks:
-      - shlabs-net
-
 # 不发布任何宿主机端口：数据库只在 shlabs-net 内部可达（容器名直连）。
 # 靶场接入：base/*/docker-compose.yml 声明外部网络 shlabs-net，或运行时
 #   docker network connect shlabs-net <靶场容器名>
@@ -103,4 +80,3 @@ volumes:
   shlabs_mysql_data:
   shlabs_pg_data:
   shlabs_sqlite_data:
-  shlabs_redis_data:
