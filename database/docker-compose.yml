@@ -42,6 +42,33 @@ services:
     networks:
       - shlabs-net
 
+  sqlite:
+    image: keinos/sqlite3:latest
+    container_name: shlabs-sqlite
+    restart: unless-stopped
+    # 镜像默认以非 root 的 sqlite 用户运行，named volume 首挂属主是 root，
+    # 非写权限 → 初始化失败；显式以 root 运行完成初始化
+    user: root
+    # SQLite 是文件数据库：初始化脚本生成 /data/shlabs_notes.db 后常驻，
+    # 消费方（webshell 宿主容器）经共享 volume / docker cp 读取该文件
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "if [ ! -s /data/shlabs_notes.db ]; then
+         sqlite3 /data/shlabs_notes.db < /init/schema.sql;
+         echo 'shlabs: shlabs_notes.db initialized';
+       fi;
+       exec sleep infinity"
+    volumes:
+      - ./sqlite/init:/init:ro
+      - shlabs_sqlite_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /data/shlabs_notes.db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - shlabs-net
+
 # 不发布任何宿主机端口：数据库只在 shlabs-net 内部可达（容器名直连）。
 # 靶场接入：base/*/docker-compose.yml 声明外部网络 shlabs-net，或运行时
 #   docker network connect shlabs-net <靶场容器名>
@@ -52,3 +79,4 @@ networks:
 volumes:
   shlabs_mysql_data:
   shlabs_pg_data:
+  shlabs_sqlite_data:
