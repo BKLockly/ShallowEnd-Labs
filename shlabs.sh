@@ -102,9 +102,9 @@ Shallowend-Labs 环境管理脚本
   ./shlabs.sh list                         列出所有可用环境（自动发现 base/*/shlabs.sh 同级元信息）
   ./shlabs.sh clean <env>                  清理环境（停止 + 删除容器/网络/卷/镜像）
   ./shlabs.sh up <env>                     启动环境（构建镜像 + 启动容器）
-  ./shlabs.sh inject <env> [--key <key>] [--loader <file>] [--verify]
+  ./shlabs.sh inject <env> [--key <key>] [--loader <file>]
                                            注入 payload（先过漏洞版本校验门）
-  ./shlabs.sh test <env> [--verify]        全生命周期自测（clean → up → 健康检查 → inject → down）
+  ./shlabs.sh test <env>                   全生命周期自测（clean → up → 健康检查 → inject → down）
   ./shlabs.sh down <env>                   关闭环境（停止并删除容器）
   ./shlabs.sh reset <env>                  重置环境（clean + up）
   ./shlabs.sh logs <env>                   查看日志
@@ -165,14 +165,12 @@ case "$CMD" in
         TARGET="http://127.0.0.1:$PORT"
         KEY="$DEFAULT_KEY"
         LOADER=""
-        VERIFY=""
 
         shift 2
         while [[ $# -gt 0 ]]; do
             case "$1" in
                 --key)     KEY="$2"; shift 2 ;;
                 --loader)  LOADER="$2"; shift 2 ;;
-                --verify)  VERIFY="--verify"; shift ;;
                 *) shift ;;
             esac
         done
@@ -185,7 +183,6 @@ case "$CMD" in
 
         ARGS=""
         [[ -n "$LOADER" ]] && ARGS="$ARGS --loader $LOADER"
-        [[ -n "$VERIFY" ]] && ARGS="$ARGS $VERIFY"
 
         "$INJECT_SCRIPT" --target "$TARGET" --key "$KEY" $ARGS
         ;;
@@ -194,14 +191,6 @@ case "$CMD" in
         require_env
         PORT=$(env_port)
         URL="http://127.0.0.1:$PORT"
-        VERIFY=""
-        shift 2
-        while [[ $# -gt 0 ]]; do
-            case "$1" in
-                --verify) VERIFY="--verify"; shift ;;
-                *) shift ;;
-            esac
-        done
 
         echo "========== [$ENV_DIR] 全生命周期自测 =========="
         echo "--- 1/4 clean ---"
@@ -217,8 +206,8 @@ case "$CMD" in
         fi
         echo "[+] up, HTTP 200 on $URL/"
 
-        echo "--- 3/4 inject $VERIFY ---"
-        "$BASE_DIR/$ENV_DIR/inject.sh" --target "$URL" --key "$DEFAULT_KEY" $VERIFY
+        echo "--- 3/4 inject ---"
+        "$BASE_DIR/$ENV_DIR/inject.sh" --target "$URL" --key "$DEFAULT_KEY"
 
         echo "--- 4/4 down ---"
         compose down

