@@ -37,7 +37,7 @@ clean(清理) → up(启动) → inject(注入) → down(关闭)
 | `./shlabs.sh list` | 列出所有可用环境（自动发现） |
 | `./shlabs.sh clean <env>` | 清理：停止并删除容器/网络/卷/镜像 |
 | `./shlabs.sh up <env>` | 启动：构建镜像 + 启动容器 |
-| `./shlabs.sh inject <env> [--key <k>] [--verify] [--loader <f>] [--payload <f>]` | 注入 payload（前置漏洞版本校验门） |
+| `./shlabs.sh inject <env> [--key <k>] [--verify] [--loader <f>]` | 注入 payload（前置漏洞版本校验门） |
 | `./shlabs.sh test <env> [--verify]` | 全生命周期自测：clean → up → 健康检查 → inject → down |
 | `./shlabs.sh down <env>` | 关闭：停止并删除容器 |
 | `./shlabs.sh reset <env>` | 重置：clean + up |

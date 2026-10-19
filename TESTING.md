@@ -49,6 +49,10 @@
   状态，不算失败**（key 不匹配时也出此态）；app 实连投递 core 后复跑应转全健康；
 - `no shell takeover detected`：未检出壳接管（失败）。
 
+> 注：A 态信封判定按 json 响应解析——生成壳若配**二进制响应伪装**
+> （pngidat/pdfstream/gifdata），verify 无法解析其信封，core 健康时也只会落
+> B 态提示；这类 profile 的健康判定以 ShallowEnd `webshell_test` 为准。
+
 **ShallowEnd 侧验收（可选）**：MCP `webshell_create`（group_id=本地测试分组，
 profile 匹配 rc4 + `mysecretkey`）→ `webshell_test` 实连。
 
