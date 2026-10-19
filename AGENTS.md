@@ -95,11 +95,13 @@ healthcheck:
 ## 注入器约定（injectors/）
 
 - 每个 CVE 一个独立脚本：`cve-<id>_<载体>.py`，随本仓开源
-- 统一接口：`--target --key [--loader] [--verify] [--payload]`（+ 各自特有选项）
+- 统一接口：`--target --key [--loader] [--verify]`（+ 各自特有选项）
   - `--loader`：读取生成器产出的 emit 壳文件作为注入载荷，并校验壳内 RC4 key /
     next-action 与 `--key` 派生值一致
-  - `--verify`：注入后发 next-action 探测请求（HTTP POST，RC4 加密的 trivial
-    payload），确认 emit override 已接管
+  - `--verify`：注入后发**协议真形三态探测**——gzip 线格式的 `methodName=test`
+    调用（与 ShallowEnd 客户端 Call 同构），按响应与正常路由的差分判定壳接管，
+    解密回环判 core 健康；**绝不携带处理器源码**（壳把首个触发头请求 body 当
+    core 源码 eval 入 `_cacheHandler`，源码预热式探针会毒化内存马且重注入无效）
 - 线协议常量：`Next-Action = SHA1(key)`、`RC4 key = MD5(key)[:16]`（与 ShallowEnd
   客户端共享，非安全控制，不可更换算法）
 - 非 HTTP 传输的靶场（如 socket.io GraphQL）在注入器 docstring 里写明协议细节

@@ -102,7 +102,7 @@ Shallowend-Labs 环境管理脚本
   ./shlabs.sh list                         列出所有可用环境（自动发现 base/*/shlabs.sh 同级元信息）
   ./shlabs.sh clean <env>                  清理环境（停止 + 删除容器/网络/卷/镜像）
   ./shlabs.sh up <env>                     启动环境（构建镜像 + 启动容器）
-  ./shlabs.sh inject <env> [--key <key>] [--loader <file>] [--verify] [--payload <file>]
+  ./shlabs.sh inject <env> [--key <key>] [--loader <file>] [--verify]
                                            注入 payload（先过漏洞版本校验门）
   ./shlabs.sh test <env> [--verify]        全生命周期自测（clean → up → 健康检查 → inject → down）
   ./shlabs.sh down <env>                   关闭环境（停止并删除容器）
@@ -166,7 +166,6 @@ case "$CMD" in
         KEY="$DEFAULT_KEY"
         LOADER=""
         VERIFY=""
-        PAYLOAD=""
 
         shift 2
         while [[ $# -gt 0 ]]; do
@@ -174,7 +173,6 @@ case "$CMD" in
                 --key)     KEY="$2"; shift 2 ;;
                 --loader)  LOADER="$2"; shift 2 ;;
                 --verify)  VERIFY="--verify"; shift ;;
-                --payload) PAYLOAD="$2"; shift 2 ;;
                 *) shift ;;
             esac
         done
@@ -188,7 +186,6 @@ case "$CMD" in
         ARGS=""
         [[ -n "$LOADER" ]] && ARGS="$ARGS --loader $LOADER"
         [[ -n "$VERIFY" ]] && ARGS="$ARGS $VERIFY"
-        [[ -n "$PAYLOAD" ]] && ARGS="$ARGS --payload $PAYLOAD"
 
         "$INJECT_SCRIPT" --target "$TARGET" --key "$KEY" $ARGS
         ;;
