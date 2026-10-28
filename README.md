@@ -26,6 +26,11 @@ Node.js 环境，用于验证注入与连接。靶场优先使用**真实开源�
 | `base/CVE-2026-73649` | CVE-2026-73649 | velocityjs ≤2.1.6 SSTI → RCE（CVSS 9.8） | VeloForge（carrier） | 21503 |
 | `base/CVE-2026-45618` | CVE-2026-45618 | liquidjs <10.26.0 SSTI → RCE（CVSS 10.0，无补丁） | dungeon-revealer | 21504 |
 | `base/CVE-2026-77413` | CVE-2026-77413/77414/77415 | jsonata <1.8.8/2.0.0–2.2.0 lookup 原型链逃逸 → RCE（CVSS v4 9.3 ×3，三 CVE 共池） | Node-RED 4.1.11（官方镜像，默认无认证，**无 patch**） | 21505 |
+| `base/CVE-2026-73649-pm2` | CVE-2026-73649 | 同 73649（velocityjs ≤2.1.6 SSTI → RCE） | VeloForge（carrier）**pm2 cluster 3 worker 拓扑变体**（实例探测多实例验收） | 21506 |
+| `base/CVE-2026-73649-node-cluster` | CVE-2026-73649 | 同 73649（velocityjs ≤2.1.6 SSTI → RCE） | VeloForge（carrier）**纯 Node cluster 3 worker 拓扑变体**（无 pm2 IPC 边界路径） | 21507 |
+
+> 拓扑变体环境复用主环境的载体/钉版/注入器（单一真源），仅部署形态不同，
+> 约定见 `AGENTS.md`「拓扑变体环境」。
 
 ## 生命周期
 

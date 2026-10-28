@@ -13,6 +13,9 @@
 
 `base/CVE-2026-73649`（VeloForge）为 `kind: carrier` 自写载体（velocityjs 生态无
 "渲染用户可控模板"的真实开源项目；唯一候选 carole-admin 经核实模板不可控、不满足
-利用前提），不含第三方代码。
+利用前提），不含第三方代码。拓扑变体 `base/CVE-2026-73649-pm2` /
+`base/CVE-2026-73649-node-cluster` 构建期直接复用该载体的 package.json/src，
+不含额外第三方代码；pm2 变体运行时经 npm 引入 [pm2](https://github.com/Unitech/pm2)
+（精确 pin `5.4.2`，AGPL-3.0），仅作为进程管理器运行载体应用。
 
 注入器（`injectors/`）与靶场管理脚本为本仓库原创，MIT。

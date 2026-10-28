@@ -190,7 +190,84 @@ curl -o /dev/null -w '%{http_code}' http://127.0.0.1:21505/flows  # 200 = 未认
 **注意**：注入的恶意流会持久化到 `/data/flows.json` 卷——容器重启后 change 节点表达式
 重放（等价自动重新驻留）；完整重置用 `./shlabs.sh clean CVE-2026-77413`（清卷）。
 
-## 5. 常见问题
+## 5. base/CVE-2026-73649-pm2 — pm2 cluster 多 worker 拓扑（实例探测验收，变体 A）
+
+| 项 | 值 |
+|----|-----|
+| 漏洞 | 同 CVE-2026-73649（velocityjs ≤2.1.6 SSTI → RCE）——**不新增漏洞面** |
+| 目标 | VeloForge 载体（复用单实例环境的 package.json/src 与 velocityjs@2.1.6 钉版），**pm2 cluster 模式 3 个 worker** 共享同一端口（`pm2-runtime` 前台托管） |
+| 用途 | ShallowEnd 实例探测升级（P6）验收：`getInstanceSurvey` 内部清点 + `_PRB_` ping 可达性 + 覆盖率在**有 pm2 IPC** 的多实例下的真实行为 |
+| 拓扑 | 单容器 `127.0.0.1:21506`：1 个 pm2 master + 3 个 cluster worker（`pm_id` / `NODE_UNIQUE_ID` 线索可被 survey 的 pm2 来源读取） |
+| 触发端点 | `POST /api/render`（与单实例环境一致，注入器共用 `cve-2026-73649_velocity.py`） |
+
+```bash
+./shlabs.sh up CVE-2026-73649-pm2
+curl -o /dev/null -w '%{http_code}' http://127.0.0.1:21506/   # 200 即就绪
+docker compose -f base/CVE-2026-73649-pm2/docker-compose.yml exec veloforge-pm2 pm2 ls
+# 预期：veloforge × 3，mode=cluster，pm_id 0/1/2，全部 online
+
+./shlabs.sh inject CVE-2026-73649-pm2 --loader ~/Library/Caches/ShallowEnd/generated/<壳文件>.js
+# 预期：版本门 OK（velocityjs@2.1.6）→ Inject OK — memory shell resident in PID N
+```
+
+## 6. base/CVE-2026-73649-node-cluster — 纯 Node cluster 多 worker 拓扑（实例探测能力边界，变体 B）
+
+| 项 | 值 |
+|----|-----|
+| 漏洞 | 同 CVE-2026-73649（velocityjs ≤2.1.6 SSTI → RCE）——**不新增漏洞面** |
+| 目标 | VeloForge 载体（复用单实例环境的 package.json/src 与 velocityjs@2.1.6 钉版），**原生 `cluster` 模块 primary fork 3 个 worker**（`WORKERS` 环境变量可调，默认 3），**无 pm2、无 pm2 IPC** |
+| 用途 | 能力边界路径：无 pm2 IPC 时 survey 的 pm2 来源应如实 `unavailable`，清点退回 `cluster.workers` / `/proc` 扫描；`_PRB_` ping 在无 worker→worker IPC 场景应显式「不适用」（设计文档 P3 禁止简化项） |
+| 拓扑 | 单容器 `127.0.0.1:21507`：1 个 primary + 3 个裸 cluster worker |
+| 触发端点 | `POST /api/render`（与单实例环境一致，注入器共用 `cve-2026-73649_velocity.py`） |
+
+```bash
+./shlabs.sh up CVE-2026-73649-node-cluster
+curl -o /dev/null -w '%{http_code}' http://127.0.0.1:21507/   # 200 即就绪
+docker compose -f base/CVE-2026-73649-node-cluster/docker-compose.yml exec veloforge-cluster \
+  ps -o pid,ppid,args | grep -c "node "                        # 1 primary + 3 worker = 4 个 node 进程
+
+./shlabs.sh inject CVE-2026-73649-node-cluster --loader ~/Library/Caches/ShallowEnd/generated/<壳文件>.js
+# 预期：版本门 OK（velocityjs@2.1.6）→ Inject OK — memory shell resident in PID N
+```
+
+## 6.1 多 worker 环境的注入行为与实例探测验证流程
+
+两个多 worker 环境（pm2 / 纯 cluster）共用同一套行为模型与验证流程：
+
+**注入行为（预期）**
+
+- **LB 落点天然随机（按 TCP 连接轮转）**：Node cluster 调度（含 pm2 cluster 底座）按
+  **连接**而非请求轮转——一次注入只感染处理该请求的 worker；同一个 keep-alive 会话
+  （如 `requests.Session`）会一直命中同一 worker。重复注入请换新连接（curl 每次调用
+  新开连接即可），注入 N 次可覆盖全部 N 个 worker。
+- 重复注入到**已感染** worker：壳自检 `_cacheHandler` 报 `already resident`，幂等安全；
+  注入到**未感染** worker 则正常安装。两次注入 PID 不同 = 命中了不同 worker。
+- 未感染 worker 收到带触发头（`next-action`）的请求时**不拦截**，走应用正常路由
+  （`/api/render` 404 之外的表现）——多 worker 下 ShallowEnd 实连/下发偶发失败再重试
+  属预期，由管线层 LB 容错（EnsureReady / 条件重试）消化。
+
+**实例探测验证流程（P6 验收口径，主仓 `docs/plan/instance-probe-upgrade.md`）**
+
+1. **注入 1/N**：注入一次（感染 1 个 worker，记下注入器输出的 PID）。
+2. **清点**：ShallowEnd 侧触发实例清点（MCP `webshell_survey`）：
+   - pm2 环境（变体 A）：`cluster_type=pm2`，`total=4`（master + 3 worker，pm2 来源经
+     IPC 拿 `pm_id`/pid 清单）；`instances` 含 self（infected=true）与清点到的未感染
+     worker（origin=pm2/cluster/proc_scan）。
+   - 纯 cluster 环境（变体 B）：`cluster_type=cluster`，pm2 来源 `unavailable`
+     （**非报错**），`cluster.workers`（若 self 为 primary）或 `/proc` 扫描补齐清单；
+     `total ≥ 4`。
+   - 旧 payload（无 getInstanceSurvey 方法）应识别为 `payload_support=false` 退回轮盘赌，
+     不炸。
+3. **ping + 覆盖率**：下发 `_PRB_` ping → deadline 内收 pong → 覆盖率 = (pong ∪ self) ∩ survey：
+   - pm2 环境：注入 1/N 后覆盖率应显示 **1/N**（设计文档 P3 验收原句：pm2 环境注入
+     1/N worker 后覆盖率显示 1/N）。
+   - 纯 cluster 环境：无 worker→worker IPC，ping 应显式**不适用**，不得假装验证过。
+4. **扩散验证（可选）**：换新连接重复注入 2 次（共感染 2-3 个 worker）→ 重跑清点与
+   ping → 覆盖率升为 2/N、3/N；对已感染 worker 的注入返回 already resident。
+5. **清理重置**：多 worker 环境内存马驻留在 worker 进程；`down` 后需重新注入；
+   `clean` 彻底重建。
+
+## 7. 常见问题
 
 | 症状 | 处置 |
 |------|------|
@@ -199,10 +276,10 @@ curl -o /dev/null -w '%{http_code}' http://127.0.0.1:21505/flows  # 200 = 未认
 | 端口被占用 | `docker ps` 查残留容器（尤其改名前的旧项目名容器）；`docker rm -f <name>` |
 | RealWorld API 起不来（seed 段错误） | 必须用 Debian 系基础镜像（`Dockerfile.api` 已固定 node:20-slim）；seed 已顺序化（`patches/seed-sequential.patch`） |
 | dungeon-revealer 构建期 apt 404 | node:16 基于 bullseye（2026-08 已归档），Dockerfile 已固定切 archive.debian.org 且删除 bullseye-security 源 |
-| 注入成功但 ShallowEnd 连不上 | 内存马驻留在**进程**里；容器重启/`down` 后需重新注入。多进程容器（cluster 模式）注意注入的 PID 是否对外服务进程 |
+| 注入成功但 ShallowEnd 连不上 | 内存马驻留在**进程**里；容器重启/`down` 后需重新注入。多进程容器（cluster 模式）见 §6.1：一次注入只感染一个 worker，LB 落点未感染时实连/下发失败重试属预期（EnsureReady 消化）；重复注入换新连接可覆盖全部 worker |
 | flight 重注入返回 200 空响应 | 结构性限制：exploit 请求自带 Next-Action 触发头，驻留壳拦截该头的一切请求——先 `clean` / `down -v` 重建容器再注入 |
 
-## 6. Mem Pipe 交互终端 e2e（主仓）
+## 8. Mem Pipe 交互终端 e2e（主仓）
 
 ShallowEnd 主仓有两个 pipe e2e 用例（`PIPE_E2E=1 go test -tags e2e ./internal/app/ -run <name>`），
 按目标侧 profile 自适应，互斥跳过：
@@ -220,7 +297,7 @@ Dockerfile 变化的镜像）。
 主仓 payload 模板改动生效必须重新 `inject`（容器重启或 `clean && up` 后再注入）；
 同一存活 payload 上重复跑 e2e 需主仓侧 seq 分配器播种晚于上次运行（2026-10-10 起已墙时钟播种）。
 
-## 7. 验收口径
+## 9. 验收口径
 
 每个环境的最小验收 = `./shlabs.sh up <env>` 服务健康 + `./shlabs.sh inject <env>`
 返回注入成功标记（`SSTI_SHELL_OK:<pid>` / flight `exploit ok!`）。
