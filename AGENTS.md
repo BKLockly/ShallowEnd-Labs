@@ -94,16 +94,24 @@ healthcheck:
 
 ## 注入器约定（injectors/）
 
+- **铁律：注入器唯一参数是 `--loader`（必填），没有 `--key`，没有内置模板。**
+  注入载荷**必须**由 `shallowend_payload_generate`（或 ShallowEnd 生成页）产出，
+  `--loader` 指定壳文件路径。靶场注入验证的是「生成器产物 → 注入 → 实连」的
+  完整用户链路，不提供绕过生成器的旁路。
+  - 壳自包含全部线协议常量（RC4 key、Next-Action hash 烘在壳内）；注入器**不做
+    key/hash 校验**——混淆壳里本就提取不到，壳与 C2 的配对正确性由 ShallowEnd
+    连接期（`webshell_test` 实连）兜底，这才是唯一权威口径
+  - 注意 Profile ↔ 壳响应形态匹配：壳的响应信封（JSON/PNG/…）由生成时所选
+    profile 决定，`webshell_test` 必须用同一 profile，错配报 envelope 解析失败
 - 每个 CVE 一个独立脚本：`cve-<id>_<载体>.py`，随本仓开源
-- 统一接口：`--target --key [--loader]`（+ 各自特有选项）
-  - `--loader`：读取生成器产出的 emit 壳文件作为注入载荷，并校验壳内 RC4 key /
-    next-action 与 `--key` 派生值一致
+- 统一接口：`inject --target <url> --loader <壳文件路径>`（+ 各自特有只读选项）
 - 注入器只做注入，不做协议探测：emit 壳把首个触发头请求的 body 当 core 源码
   eval 入 `_cacheHandler` 槽位，任何"源码预热"式探针都会毒化内存马且重注入
   无效（历史 PONG 探针即此缺陷）；连通性与健康验证统一由 ShallowEnd 连接期
   （`webshell_test`：投递 core + `test` 调用断言）完成
 - 线协议常量：`Next-Action = SHA1(key)`、`RC4 key = MD5(key)[:16]`（与 ShallowEnd
-  客户端共享，非安全控制，不可更换算法）
+  客户端共享，非安全控制，不可更换算法；key 只存在于 profile 与壳内，不出现在
+  注入器 CLI / 进程参数里）
 - 非 HTTP 传输的靶场（如 socket.io GraphQL）在注入器 docstring 里写明协议细节
 
 ## 新增环境流程

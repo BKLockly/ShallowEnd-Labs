@@ -18,7 +18,6 @@ set -euo pipefail
 
 LABS_ROOT="$(cd "$(dirname "$0")" && pwd)"
 BASE_DIR="$LABS_ROOT/base"
-DEFAULT_KEY="mysecretkey"
 WAIT_SECONDS="${SHLABS_WAIT:-60}"
 
 # ── 环境发现与元信息 ────────────────────────────────────
@@ -102,8 +101,8 @@ Shallowend-Labs 环境管理脚本
   ./shlabs.sh list                         列出所有可用环境（自动发现 base/*/shlabs.sh 同级元信息）
   ./shlabs.sh clean <env>                  清理环境（停止 + 删除容器/网络/卷/镜像）
   ./shlabs.sh up <env>                     启动环境（构建镜像 + 启动容器）
-  ./shlabs.sh inject <env> [--key <key>] [--loader <file>]
-                                           注入 payload（先过漏洞版本校验门）
+  ./shlabs.sh inject <env> --loader <file>  注入用户自备的 emit 壳（先过漏洞版本校验门；
+                                           铁律：唯一载荷来源，无 --key、无内置模板）
   ./shlabs.sh test <env>                   全生命周期自测（clean → up → 健康检查 → inject → down）
   ./shlabs.sh down <env>                   关闭环境（停止并删除容器）
   ./shlabs.sh reset <env>                  重置环境（clean + up）
@@ -163,17 +162,25 @@ case "$CMD" in
         require_env
         PORT=$(env_port)
         TARGET="http://127.0.0.1:$PORT"
-        KEY="$DEFAULT_KEY"
         LOADER=""
 
         shift 2
         while [[ $# -gt 0 ]]; do
             case "$1" in
-                --key)     KEY="$2"; shift 2 ;;
                 --loader)  LOADER="$2"; shift 2 ;;
                 *) shift ;;
             esac
         done
+
+        if [[ -z "$LOADER" ]]; then
+            echo "Error: --loader is required (emit shell JS from shallowend_payload_generate;" >&2
+            echo "       payload is user-provided — injectors have no builtin template, no --key)" >&2
+            exit 1
+        fi
+        if [[ ! -f "$LOADER" ]]; then
+            echo "Error: loader file not found: $LOADER" >&2
+            exit 1
+        fi
 
         INJECT_SCRIPT="$BASE_DIR/$ENV_DIR/inject.sh"
         if [[ ! -x "$INJECT_SCRIPT" ]]; then
@@ -181,10 +188,7 @@ case "$CMD" in
             exit 1
         fi
 
-        ARGS=""
-        [[ -n "$LOADER" ]] && ARGS="$ARGS --loader $LOADER"
-
-        "$INJECT_SCRIPT" --target "$TARGET" --key "$KEY" $ARGS
+        "$INJECT_SCRIPT" --target "$TARGET" --loader "$LOADER"
         ;;
 
     test)
@@ -207,7 +211,13 @@ case "$CMD" in
         echo "[+] up, HTTP 200 on $URL/"
 
         echo "--- 3/4 inject ---"
-        "$BASE_DIR/$ENV_DIR/inject.sh" --target "$URL" --key "$DEFAULT_KEY"
+        # 铁律：注入载荷用户自备（--loader 必填，无内置模板/--key）。
+        # 全生命周期自测需要显式指定壳文件，否则跳过注入并提示。
+        if [[ -n "$TEST_LOADER" && -f "$TEST_LOADER" ]]; then
+            "$BASE_DIR/$ENV_DIR/inject.sh" --target "$URL" --loader "$TEST_LOADER"
+        else
+            echo "[!] skip inject: set TEST_LOADER=<emit shell JS> to run injection in lifecycle test"
+        fi
 
         echo "--- 4/4 down ---"
         compose down
@@ -228,7 +238,7 @@ case "$CMD" in
         echo "  Vulnerability: $(env_vuln)"
         echo "  Port:        $(env_port)"
         echo "  URL:         http://127.0.0.1:$(env_port)"
-        echo "  Default Key: $DEFAULT_KEY"
+        echo "  Loader:      注入时 --loader 传入 shallowend_payload_generate 产出的 emit 壳（必填）"
         ;;
 
     help|--help|-h|*)

