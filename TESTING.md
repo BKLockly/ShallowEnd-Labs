@@ -262,8 +262,11 @@ docker compose -f base/CVE-2026-73649-node-cluster/docker-compose.yml exec velof
    - pm2 环境：注入 1/N 后覆盖率应显示 **1/N**（设计文档 P3 验收原句：pm2 环境注入
      1/N worker 后覆盖率显示 1/N）。
    - 纯 cluster 环境：无 worker→worker IPC，ping 应显式**不适用**，不得假装验证过。
-4. **扩散验证（可选）**：换新连接重复注入 2 次（共感染 2-3 个 worker）→ 重跑清点与
-   ping → 覆盖率升为 2/N、3/N；对已感染 worker 的注入返回 already resident。
+4. **core 铺开的边界（当前实现语义）**：`_PRB_` ping/pong 监听随 **core**（payload）
+   装载注册——core 只在被 C2 连接期推送（webshell_test）过的 worker 上存在，重复注入
+   壳不会提升覆盖率。因此当前验收口径是 **1/N**（清点 N ✓、广播 sent=N-1 ✓、覆盖
+   self=1）；覆盖率升至 N/N 需要 core 铺开（Tier-1 扩散，后续阶段）。对已感染 worker
+   的注入返回 already resident 幂等。
 5. **清理重置**：多 worker 环境内存马驻留在 worker 进程；`down` 后需重新注入；
    `clean` 彻底重建。
 
