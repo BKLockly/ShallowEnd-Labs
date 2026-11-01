@@ -270,7 +270,50 @@ docker compose -f base/CVE-2026-73649-node-cluster/docker-compose.yml exec velof
 5. **清理重置**：多 worker 环境内存马驻留在 worker 进程；`down` 后需重新注入；
    `clean` 彻底重建。
 
-## 7. 常见问题
+## 7. base/CVE-2026-42922 — FUXA /nodered 授权绕过 RCE（真实目标：FUXA 1.3.2 内嵌 Node-RED）
+
+| 项 | 值 |
+|----|-----|
+| 漏洞 | CVE-2026-42922（GHSA-24fv-gm68-rm6q，TALOS-2026-2419）：FUXA ≤1.3.2 `/nodered` 授权绕过——未认证 `POST /api/heartbeat` 铸 guest JWT + `allowDashboard` 只验签名不验权限 → 内嵌 Node-RED Admin API 部署恶意 flow → 宿主任意 JS（CVSS v3 9.8，CWE-285） |
+| 目标 | [FUXA](https://github.com/frangoteam/FUXA) 1.3.2（frangoteam 开源 SCADA/HMI，MIT，**官方 Docker 镜像** `frangoteam/fuxa:1.3.2`，build 1.3.2-2827；修复线 v1.3.3 = 2026-06-21）；内嵌 node-red 4.1.8（jsonata 2.0.6 同场在场——一场双洞） |
+| 形态 | 主靶 = **secure 模式**（secureEnabled + nodeRedEnabled + nodeRedAuthMode=secure，完整 42922 链）；变体 = **legacy-open**（0-click 直入，`SHLABS_FUXA_SETTINGS=mysettings.legacy-open.json ./shlabs.sh up CVE-2026-42922` 切换） |
+| 拓扑 | 单服务 127.0.0.1:21508（容器内 1881）；Node-RED 以 `RED.init(server)` 同进程内嵌，阶段②③与母池 77413 靶场同构 |
+| 注入器 | `injectors/cve-2026-42922_fuxa.py`（形态自适应：免凭据可达 → legacy-open；否则 heartbeat 铸 guest JWT；`POST /nodered/flows` 部署含 emit 壳的 change+inject 流 → `POST /nodered/inject/<id>` 触发；✅ 已落地双形态验收） |
+
+利用链（secure）：heartbeat 铸 guest JWT（jwt-helper.verifyToken 对无 token 请求自铸
+guest token 验证 → userId='guest' → heartbeat 回铸）→ `x-access-token` 头 → 只验签名
+中间件放行 → JSONata change 节点（$spread/$constructor 链，与母池 77413 同款）eval
+emit 壳 → `RED.init(server)` 同进程，FUXA 自身流量即触发。
+
+```bash
+./shlabs.sh up CVE-2026-42922
+curl -o /dev/null -w '%{http_code}' http://127.0.0.1:21508/                 # 200 即就绪（SPA）
+curl -o /dev/null -w '%{http_code}' http://127.0.0.1:21508/nodered/flows   # 401 = secure 主靶形态
+curl -s -X POST http://127.0.0.1:21508/api/heartbeat -H 'Content-Type: application/json' -d '{}'  # {"message":"guest","token":...}
+
+./shlabs.sh inject CVE-2026-42922 --loader /path/to/emit_shell.js
+# 混淆壳需显式给探测用触发头（否则探测跳过）：--action-hash <SHA1(profile password)>
+#   经 ./base/CVE-2026-42922/inject.sh --target ... --loader ... --action-hash ... 透传
+# 预期：版本门双 OK（fuxa@1.3.2-* / node-red@4.1.x）→ 铸 token/形态探测 → 部署+触发
+# → 容器日志 SHALLOWEND_EMIT_OK:<pid>（pid=1 主进程）；随后 ShallowEnd webshell_test 实连
+```
+
+**载体坑位（实测记录，2026-11-02）**：function node 载体不可用——node:vm 沙箱里壳虽经
+`Buffer.constructor` 逃逸落位（SHALLOWEND_EMIT_OK/404 decoy 正常），但 core 的
+`await import()` 在该安装链的 `new Function` 语境触发
+`ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING`（install 期 IIFE 的 import 能跑、process 期
+方法内 import 全炸）。**内嵌形态注入一律优先 JSONata change 节点载体**（@node-red/util
+主进程求值，无沙箱）。
+
+**ShallowEnd 侧双坑（profile 配置）**：①`profile_create` 的 password 与 secret_key 必须
+同值（只填 secret_key → C2 用空 password 派生触发头 → 壳全部 decoy 化）；②
+`payload_generate` 的 encryption 必须显式传（profile_id 不继承加密，默认 aes 与 rc4
+profile 错配报 bad decrypt）。
+
+已实测（2026-11-02）：secure 主靶 rc4 壳 → `SHALLOWEND_EMIT_OK:1` → webshell_test
+连接成功（64ms）→ command_execute exit 0；legacy-open 变体免凭据全通。
+
+## 8. 常见问题
 
 | 症状 | 处置 |
 |------|------|
@@ -282,7 +325,7 @@ docker compose -f base/CVE-2026-73649-node-cluster/docker-compose.yml exec velof
 | 注入成功但 ShallowEnd 连不上 | 内存马驻留在**进程**里；容器重启/`down` 后需重新注入。多进程容器（cluster 模式）见 §6.1：一次注入只感染一个 worker，LB 落点未感染时实连/下发失败重试属预期（EnsureReady 消化）；重复注入换新连接可覆盖全部 worker |
 | flight 重注入返回 200 空响应 | 结构性限制：exploit 请求自带 Next-Action 触发头，驻留壳拦截该头的一切请求——先 `clean` / `down -v` 重建容器再注入 |
 
-## 8. Mem Pipe 交互终端 e2e（主仓）
+## 9. Mem Pipe 交互终端 e2e（主仓）
 
 ShallowEnd 主仓有两个 pipe e2e 用例（`PIPE_E2E=1 go test -tags e2e ./internal/app/ -run <name>`），
 按目标侧 profile 自适应，互斥跳过：
@@ -300,7 +343,7 @@ Dockerfile 变化的镜像）。
 主仓 payload 模板改动生效必须重新 `inject`（容器重启或 `clean && up` 后再注入）；
 同一存活 payload 上重复跑 e2e 需主仓侧 seq 分配器播种晚于上次运行（2026-10-10 起已墙时钟播种）。
 
-## 9. 验收口径
+## 10. 验收口径
 
 每个环境的最小验收 = `./shlabs.sh up <env>` 服务健康 + `./shlabs.sh inject <env>`
 返回注入成功标记（`SSTI_SHELL_OK:<pid>` / flight `exploit ok!`）。
