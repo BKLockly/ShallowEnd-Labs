@@ -1,3 +1,6 @@
+# 数据库功能测试常驻栈：MySQL/PostgreSQL/SQLite 三容器 + 初始化/seed 脚本，独立于靶场编排。
+# 启动：docker compose -f database/docker-compose.yml up -d
+# 仅在 shlabs-net 内部可达（不发布宿主端口），供数据库连接/驱动功能测试用。
 name: shlabs-db
 
 services:
@@ -43,7 +46,7 @@ services:
       - shlabs-net
 
   sqlite:
-    image: keinos/sqlite3:latest
+    image: keinos/sqlite3@sha256:a5610a155a8c9007f2050120406a0abcffab246570d6ac1ffe370f5f23e14dc1
     container_name: shlabs-sqlite
     restart: unless-stopped
     # 镜像默认以非 root 的 sqlite 用户运行，named volume 首挂属主是 root，

@@ -20,7 +20,8 @@
 ```bash
 ./shlabs.sh list                      # 列出全部环境（自动发现 base/*/shlabs.yml）
 ./shlabs.sh up <env>                  # 构建镜像 + 启动（首次构建较慢）
-./shlabs.sh inject <env> --loader <壳文件>       # 注入（内置漏洞版本校验门；载荷用户自备）
+./shlabs.sh inject <env> --loader <壳文件>       # 注入（内置漏洞版本校验门；载荷用户自备）；
+                                                 # 额外参数原样透传给注入器（如 --action-hash/--password）
 ./shlabs.sh info <env>                # 环境详情
 ./shlabs.sh logs <env>                # 日志
 ./shlabs.sh down <env>                # 停止

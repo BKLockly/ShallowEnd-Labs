@@ -12,7 +12,10 @@ Node.js 环境，用于验证注入与连接。靶场优先使用**真实开源�
 | 目录 | 说明 |
 |------|------|
 | `base/` | 靶场环境（按 CVE-ID 命名，一目录一 CVE） |
+| `database/` | 数据库功能测试常驻栈：MySQL/PostgreSQL/SQLite 容器与初始化/seed 脚本，独立 compose（`docker compose -f database/docker-compose.yml up -d` 启动），供数据库连接/驱动功能测试用 |
 | `injectors/` | 按 CVE 命名的内存马注入器（靶场唯一注入真源） |
+| `loadbalance/` | 预留拓扑骨架（规划中，暂无实现） |
+| `network/` | 预留拓扑骨架（规划中，暂无实现） |
 | `shlabs.sh` | 统一生命周期管理脚本（自动发现 `base/*/shlabs.yml`） |
 | `TESTING.md` | **测试指引**：逐环境讲解靶场信息与注入方法（后续测试从这里开始） |
 | `AGENTS.md` | 仓库约定（新增/修改环境必读） |

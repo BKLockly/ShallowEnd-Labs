@@ -84,7 +84,7 @@ compose_up() {
 wait_healthy() {
     local url="$1" i
     for i in $(seq 1 "$WAIT_SECONDS"); do
-        if curl -fsS -o /dev/null "$url/"; then return 0; fi
+        if curl -fsS --max-time 2 -o /dev/null "$url/"; then return 0; fi
         sleep 1
     done
     return 1
@@ -102,7 +102,8 @@ Shallowend-Labs 环境管理脚本
   ./shlabs.sh clean <env>                  清理环境（停止 + 删除容器/网络/卷/镜像）
   ./shlabs.sh up <env>                     启动环境（构建镜像 + 启动容器）
   ./shlabs.sh inject <env> --loader <file>  注入用户自备的 emit 壳（先过漏洞版本校验门；
-                                           铁律：唯一载荷来源，无 --key、无内置模板）
+                                           铁律：唯一载荷来源，无 --key、无内置模板）；
+                                           额外参数原样透传给注入器（如 --action-hash/--password）
   ./shlabs.sh test <env>                   全生命周期自测（clean → up → 健康检查 → inject → down）
   ./shlabs.sh down <env>                   关闭环境（停止并删除容器）
   ./shlabs.sh reset <env>                  重置环境（clean + up）
@@ -163,12 +164,21 @@ case "$CMD" in
         PORT=$(env_port)
         TARGET="http://127.0.0.1:$PORT"
         LOADER=""
+        EXTRA_ARGS=()
 
         shift 2
         while [[ $# -gt 0 ]]; do
             case "$1" in
                 --loader)  LOADER="$2"; shift 2 ;;
-                *) shift ;;
+                *)
+                    # 其余参数原样透传给注入器；未知参数可能带值（如 --password/--action-hash），
+                    # 成对收集保持原序（剩余单个参数按无值处理）
+                    if [[ $# -ge 2 ]]; then
+                        EXTRA_ARGS+=("$1" "$2"); shift 2
+                    else
+                        EXTRA_ARGS+=("$1"); shift 1
+                    fi
+                    ;;
             esac
         done
 
@@ -188,7 +198,7 @@ case "$CMD" in
             exit 1
         fi
 
-        "$INJECT_SCRIPT" --target "$TARGET" --loader "$LOADER"
+        "$INJECT_SCRIPT" --target "$TARGET" --loader "$LOADER" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
         ;;
 
     test)
