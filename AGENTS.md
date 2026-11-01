@@ -78,7 +78,7 @@ base/<CVE-ID>/
 ├── README.md                # 免责声明头 + CVE/目标/钉版/触发端点/注入/连接参数
 ├── inject.sh                # 注入入口（版本校验门 → 调 injectors/<injector>.py）
 ├── patches/                 # 对上游的钉位/实验室补丁（每处改动可追溯）
-└── .env.example             # 构建代理等本地变量样例（.env 已 gitignore）
+└── .env.example             # 构建代理等本地变量样例（.env 已 gitignore）；构建型环境（source build）需要，官方镜像环境（如 CVE-2026-77413/CVE-2026-42922）不需要
 ```
 
 ### shlabs.yml schema

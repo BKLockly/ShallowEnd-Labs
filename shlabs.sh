@@ -98,7 +98,7 @@ Shallowend-Labs 环境管理脚本
   clean → up → inject → down
 
 用法:
-  ./shlabs.sh list                         列出所有可用环境（自动发现 base/*/shlabs.sh 同级元信息）
+  ./shlabs.sh list                         列出所有可用环境（自动发现 base/*/shlabs.yml 同级元信息）
   ./shlabs.sh clean <env>                  清理环境（停止 + 删除容器/网络/卷/镜像）
   ./shlabs.sh up <env>                     启动环境（构建镜像 + 启动容器）
   ./shlabs.sh inject <env> --loader <file>  注入用户自备的 emit 壳（先过漏洞版本校验门；
